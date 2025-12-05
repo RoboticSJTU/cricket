@@ -1,3 +1,12 @@
+// Suppress warning from hpp-fcl/coal
+#include <coal/config.hh>
+#include <coal/deprecated.hh>
+#ifndef COAL_BACKWARD_COMPATIBILITY_WITH_HPP_FCL
+#define COAL_BACKWARD_COMPATIBILITY_WITH_HPP_FCL
+#endif
+#define HPP_FCL_VERSION_AT_LEAST(major, minor, patch) COAL_VERSION_AT_LEAST(major, minor, patch)
+#define HPP_FCL_COAL_HPP
+
 #include "pinocchio_cppadcg.hh"
 
 #include <pinocchio/parsers/urdf.hpp>
@@ -79,6 +88,7 @@ struct RobotInfo
         const std::optional<std::filesystem::path> &srdf_file,
         const std::optional<std::string> &end_effector)
     {
+        fmt::print("  Loading URDF: {}\n", urdf_file.string());
         if (not std::filesystem::exists(urdf_file))
         {
             throw std::runtime_error(fmt::format("URDF file {} does not exist!", urdf_file.string()));
@@ -98,11 +108,13 @@ struct RobotInfo
         }
         else
         {
+            fmt::print("  Loading SRDF: {}\n", srdf_file->string());
             collision_model.addAllCollisionPairs();
             pinocchio::srdf::removeCollisionPairs(model, collision_model, *srdf_file);
             extract_collision_data();
         }
 
+        fmt::print("  Extracting spheres...\n");
         extract_spheres();
 
         if (not end_effector)
@@ -244,8 +256,21 @@ struct RobotInfo
         }
 
         std::size_t bs = 0;
-        for (auto i = 0U; i < model.frames.size(); ++i)
+        const auto total_frames = model.frames.size();
+        for (auto i = 0U; i < total_frames; ++i)
         {
+            float progress = float(i + 1) / total_frames;
+            int bar_width = 50;
+            int pos = int(bar_width * progress);
+            fmt::print("\rProcessing frames: [");
+            for (int b = 0; b < bar_width; ++b) {
+                if (b < pos) fmt::print("=");
+                else if (b == pos) fmt::print(">");
+                else fmt::print(" ");
+            }
+            fmt::print("] {}%", int(progress * 100.0));
+            fflush(stdout);
+
             std::vector<SphereInfo> link_info;
             std::vector<std::size_t> sphere_indices;
             for (const auto &info : spheres)
@@ -282,6 +307,7 @@ struct RobotInfo
                 bounding_sphere_index.emplace_back(0);
             }
         }
+        fmt::print("\n");
     }
 
     auto collision_pair_to_frame_pair(const CollisionPair &cp) -> std::pair<std::size_t, std::size_t>
@@ -353,6 +379,18 @@ struct RobotInfo
 
         for (auto i = 0U; i < n; ++i)
         {
+            float progress = float(i + 1) / n;
+            int bar_width = 50;
+            int pos = int(bar_width * progress);
+            fmt::print("\rGuessing collisions: [");
+            for (int b = 0; b < bar_width; ++b) {
+                if (b < pos) fmt::print("=");
+                else if (b == pos) fmt::print(">");
+                else fmt::print(" ");
+            }
+            fmt::print("] {}%", int(progress * 100.0));
+            fflush(stdout);
+
             auto q = randomConfiguration(model);
             computeCollisions(model, data, collision_model, collision_data, q);
 
@@ -375,6 +413,7 @@ struct RobotInfo
                 }
             }
         }
+        fmt::print("\n");
 
         // Remove all adjacent frames
         auto adjacents = get_adjacent_frames();
@@ -563,6 +602,7 @@ int main(int argc, char **argv)
     }
 
     std::filesystem::path json_path(result["configuration_file"].as<std::string>());
+    fmt::print("Loading configuration from: {}\n", json_path.string());
     auto parent_path = json_path.parent_path();
 
     if (not std::filesystem::exists(json_path))
@@ -580,6 +620,7 @@ int main(int argc, char **argv)
     try
     {
         data = nlohmann::json::parse(json_file);
+        fmt::print("Configuration loaded successfully.\n");
     }
     catch (std::exception &e)
     {
@@ -598,25 +639,31 @@ int main(int argc, char **argv)
         end_effector_name = data["end_effector"];
     }
 
+    fmt::print("Initializing RobotInfo...\n");
     RobotInfo robot(parent_path / data["urdf"], srdf_path, end_effector_name);
+    fmt::print("RobotInfo initialized.\n");
 
     data.update(robot.json());
 
+    fmt::print("Tracing End Effector FK...\n");
     auto traced_eefk_code = trace_sphere_cc_fk(robot, false, false, true);
     data["eefk_code"] = traced_eefk_code.code;
     data["eefk_code_vars"] = traced_eefk_code.temp_variables;
     data["eefk_code_output"] = traced_eefk_code.outputs;
 
+    fmt::print("Tracing Sphere FK...\n");
     auto traced_spherefk_code = trace_sphere_cc_fk(robot, true, false, false);
     data["spherefk_code"] = traced_spherefk_code.code;
     data["spherefk_code_vars"] = traced_spherefk_code.temp_variables;
     data["spherefk_code_output"] = traced_spherefk_code.outputs;
 
+    fmt::print("Tracing Collision Checking FK...\n");
     auto traced_ccfk_code = trace_sphere_cc_fk(robot, true, true, false);
     data["ccfk_code"] = traced_ccfk_code.code;
     data["ccfk_code_vars"] = traced_ccfk_code.temp_variables;
     data["ccfk_code_output"] = traced_ccfk_code.outputs;
 
+    fmt::print("Tracing Collision Checking + End Effector FK...\n");
     auto traced_ccfkee_code = trace_sphere_cc_fk(robot, true, true, true);
     data["ccfkee_code"] = traced_ccfkee_code.code;
     data["ccfkee_code_vars"] = traced_ccfkee_code.temp_variables;
@@ -624,6 +671,7 @@ int main(int argc, char **argv)
 
     inja::Environment env;
 
+    fmt::print("Processing templates...\n");
     for (const auto &subt : data["subtemplates"])
     {
         inja::Template temp = env.parse_template(parent_path / subt["template"]);
@@ -640,6 +688,7 @@ int main(int argc, char **argv)
         output_template = data["output"];
     }
 
+    fmt::print("Writing output to template: {}\n", output_template);
     inja::Template temp = env.parse_template(parent_path / data["template"]);
     env.write(temp, data, output_template);
 
@@ -653,9 +702,12 @@ int main(int argc, char **argv)
         output_filename = "output.json";
     }
 
+    fmt::print("Writing JSON output to: {}\n", output_filename);
     std::ofstream output_file(output_filename);
     output_file << data.dump();
     output_file.close();
+
+    fmt::print("Done.\n");
 
     return 0;
 }

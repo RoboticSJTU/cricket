@@ -52,7 +52,8 @@ CPMAddPackage(
 # Find CppAD
 find_package(cppad QUIET)
 if(NOT cppad_FOUND)
-  pkg_check_modules(cppad REQUIRED cppad)
+  pkg_check_modules(cppad REQUIRED IMPORTED_TARGET cppad)
+  set(cppad_LIBRARIES PkgConfig::cppad)
 endif()
 
 # Setup CppADCG
