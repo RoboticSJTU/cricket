@@ -1,0 +1,10 @@
+{
+    "name": "autolife_s2_leef_wholebody",
+    "urdf": "autolife/autolife_s1_spherized_simplified.urdf",
+    "srdf": "autolife/robot_v2_0.srdf",
+    "end_effector": "Link_Left_Attachment",
+    "resolution": 64,
+    "template": "templates/fk_template.hh",
+    "subtemplates": [{"name": "ccfk", "template": "templates/ccfk_template.hh"}],
+    "output": "autolife_s2_leef_wholebody.hh"
+}
